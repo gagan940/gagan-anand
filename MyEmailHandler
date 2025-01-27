@@ -1,0 +1,104 @@
+global class MyEmailHandler implements Messaging.InboundEmailHandler {
+    global Messaging.InboundEmailResult handleInboundEmail(Messaging.InboundEmail email, Messaging.InboundEnvelope envelope) {
+        
+        // Initialize the result object
+        Messaging.InboundEmailResult result = new Messaging.InboundEmailResult();
+        
+        // Query to find the contact by email
+        List<Contact> contacts = [SELECT Id, Email,AccountId FROM Contact WHERE Email = :email.fromAddress LIMIT 1];
+        Contact contact;
+        
+        // If a contact is found, use it; otherwise, create a new contact
+        if (!contacts.isEmpty()) {
+            contact = contacts[0];
+        } else {
+            // Create a new Contact if none is found
+            contact = new Contact(
+                FirstName = 'Unknown', // Customize as needed
+                LastName = 'Unknown',  // Customize as needed
+                Email = email.fromAddress
+            );
+            insert contact;
+        }
+
+        // Create a new Case and link it with the found or newly created Contact
+        Case newCase = new Case(
+            Subject = 'New Case from Email: ' + email.subject,
+            Description = email.plainTextBody, // You can customize this to use the email body as the description
+            Status = 'New',
+            ContactId = contact.Id
+        );
+        insert newCase;
+
+        // Create an EmailMessage record and link it to the newly created Case
+        // Use the first recipient in the toAddresses list (if it's a single recipient)
+        String recipient = (email.toAddresses != null && email.toAddresses.size() > 0) ? email.toAddresses[0] : '';
+        
+        EmailMessage emailMessage = new EmailMessage(
+            Subject = email.subject,
+            ToAddress = recipient,
+            FromAddress = email.fromAddress,
+            TextBody = email.plainTextBody,
+            ParentId = newCase.Id // This links the EmailMessage to the newly created Case
+        );
+        insert emailMessage;
+
+                String EmailIdentification =generateBookReview(email.fromAddress,email.plainTextBody);
+            
+       if (EmailIdentification == 'Fraud.') {
+    // Step 1: Update the Account's Active__c field
+    Account acc = new Account(Id = contacts[0].AccountId, Active__c = 'No');
+    update acc;
+        
+    // Step 3: Send the generated response as an email
+    Messaging.SingleEmailMessage emailMessage2 = new Messaging.SingleEmailMessage();
+    emailMessage2.setToAddresses(new String[] { contacts[0].Email }); // Recipient's email address
+    emailMessage2.setSubject('Confirmation of Account Inactivation');
+emailMessage2.setPlainTextBody('Dear,\n\nWe would like to confirm that your account has been successfully inactivated as per your request.\n\nIf you have any further questions or require assistance in the future, please don’t hesitate to reach out to our customer service team.\n\nThank you for choosing.\n\nBest regards,\nCustomer Service Team');
+    
+    // Step 4: Send the email
+           Messaging.SendEmailResult[] emailResults = Messaging.sendEmail(new Messaging.SingleEmailMessage[] { emailMessage2 });
+
+        if (emailResults != null && emailResults[0].isSuccess()) {
+    } else {
+        System.debug('Failed to send reply. Error: ' + emailResults[0].getErrors()[0].getMessage());
+    }
+       }
+        
+
+        // Success: Set the result as processed
+        result.success = true;
+
+        return result;
+    }
+     @AuraEnabled
+    public static String generateBookReview(String email,String Address) {
+        
+        ConnectApi.EinsteinPromptTemplateGenerationsInput promptGenerationsInput = new ConnectApi.EinsteinPromptTemplateGenerationsInput();
+        Map<String, ConnectApi.WrappedValue> valueMap = new Map<String, ConnectApi.WrappedValue>();
+        Map<String, Object> EmailText = new Map<String, Object>();
+        EmailText.put('Address', Address); // Use the key expected by your template
+
+        // Serialize the map to JSON
+        ConnectApi.WrappedValue contactWrappedValue = new ConnectApi.WrappedValue();
+        contactWrappedValue.value = JSON.serialize(EmailText);
+
+      // Add to inputParams with correct key
+       valueMap.put('Input:EmailText', contactWrappedValue); // Ensure 'Input:EmailDetails' matches the template
+        
+        system.debug('valueMap'+valueMap);
+        
+        promptGenerationsInput.inputParams = valueMap;
+        promptGenerationsInput.additionalConfig = new ConnectApi.EinsteinLlmAdditionalConfigInput();
+        promptGenerationsInput.additionalConfig.applicationName = 'PromptBuilderPreview';
+        promptGenerationsInput.isPreview = false;
+        
+        system.debug('promptGenerationsInput'+promptGenerationsInput);
+         ConnectApi.EinsteinPromptTemplateGenerationsRepresentation generationsOutput = ConnectApi.EinsteinLLM.generateMessagesForPromptTemplate(
+                'TestEmailResponse',
+                promptGenerationsInput
+            );
+        system.debug('generationsOutput'+generationsOutput);
+        return generationsOutput.generations[0].text; 
+    }
+}
