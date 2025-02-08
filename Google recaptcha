@@ -1,0 +1,110 @@
+Static resource 
+
+<html>
+<head>
+    <title>reCAPTCHA demo</title>
+    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+</head>
+<body>
+    <form id="recaptcha-form">  <div class="g-recaptcha" data-sitekey="6LfZgNAqAAAAAFpL5KUmMO9H9tWhEAZlklv8Gaew" data-callback="onRecaptchaSubmit"></div>
+        <br/>
+    </form>
+
+    <script type="text/javascript">
+        function onRecaptchaSubmit(token) {  // Callback function after reCAPTCHA verification
+            if (token) {
+                // reCAPTCHA verification successful!  Send the token.
+                parent.postMessage(JSON.stringify({ status: "success", token: token }), "*"); // Or specify the origin
+            } else {
+                parent.postMessage(JSON.stringify({ status: "failed" }), "*"); // Or specify the origin
+            }
+        }
+
+        document.getElementById("recaptcha-form").addEventListener("submit", function(event) {
+            event.preventDefault(); // Prevent default form submission
+            // reCAPTCHA will handle the verification and call onRecaptchaSubmit
+        });
+
+        // Optional: Handle the case where the user doesn't interact with reCAPTCHA
+        // You can add a timer or other logic to detect inactivity and display a message.
+    </script>
+</body>
+</html>
+
+
+
+LWC - 
+
+
+HTML 
+<template>
+    <iframe src={navigateTo} name="captchaFrame" onload={captchaLoaded} style="width: -webkit-fill-available;"></iframe>
+</template>
+
+
+JS
+
+import { LightningElement, track, api } from 'lwc';
+import pageUrl from '@salesforce/resourceUrl/recaptchaV2';
+import { OmniscriptBaseMixin } from 'vlocity_cmt/omniscriptBaseMixin';
+export default class RecaptchaV2 extends OmniscriptBaseMixin(LightningElement) {
+
+    @track navigateTo = pageUrl;
+
+    constructor() {
+        super();
+        console.log('Static Resource URL:', this.navigateTo);
+        this.listenForMessage = this.listenForMessage.bind(this);
+        window.addEventListener("message", this.listenForMessage);
+    }
+
+    captchaLoaded(event) {
+        console.log('captchaLoaded Event Triggered');
+        if (event.target.getAttribute('src') === this.navigateTo) {
+            console.log('Google reCAPTCHA is loaded.');
+        }
+    }
+
+   listenForMessage(event) {
+    console.log('Message received:', event.data);
+    console.log('Message origin:', event.origin);
+    console.log('Message status',event.data.status);
+    const data = JSON.parse(event.data); // <--- PARSE THE JSON STRING!
+            console.log("Parsed data:", data); // Log the parsed object
+
+            if (data.status === 'success') {
+                console.log("reCAPTCHA verification successful!");
+                this.omniApplyCallResp({ 'captchastate': data.status });
+
+                // Now send data.token to your Apex controller for server-side verification.
+            } else if (data.status === 'failed') {
+                console.log("reCAPTCHA verification failed.");
+   
+}
+
+   }
+
+    disconnectedCallback() {
+        window.removeEventListener("message", this.listenForMessage);
+    }
+}
+
+
+
+XML
+
+<?xml version="1.0"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+	<apiVersion>62.0</apiVersion>
+	<isExposed>true</isExposed>
+	<runtimeNamespace>vlocity_cmt</runtimeNamespace>
+	<targets>
+		<target>lightning__AppPage</target>
+		<target>lightning__HomePage</target>
+		<target>lightning__RecordPage</target>
+		<target>lightning__RecordAction</target>
+		<target>lightning__UrlAddressable</target>
+		<target>lightning__FlowScreen</target>
+		<target>lightning__Tab</target>
+	</targets>
+</LightningComponentBundle>
